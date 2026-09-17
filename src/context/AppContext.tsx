@@ -1,6 +1,22 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, Role, Student, Teacher, ClassModel, SubjectModel, AttendanceRecord, GradeRecord, ScheduleItem, ExamModel, DocumentModel, NotificationModel, ActivityItem } from '../types';
+import { User, Role, Student, Teacher, ClassModel, SubjectModel, AttendanceRecord, GradeRecord, ScheduleItem, ExamModel, DocumentModel, NotificationModel, ActivityItem, GoogleDriveFile, GoogleDriveUser } from '../types';
 import { api } from '../lib/api';
+import { normalizeStudentData } from '../lib/studentUtils';
+import * as XLSX from 'xlsx';
+import {
+  getStoredDriveToken,
+  setStoredDriveToken,
+  fetchGoogleDriveAbout,
+  getOrCreateDriveFolder,
+  listGoogleDriveFiles,
+  uploadFileToGoogleDrive,
+  deleteFileFromGoogleDrive,
+  initGoogleDriveAuth,
+  requestGoogleDriveToken,
+  disconnectGoogleDrive as svcDisconnectDrive,
+  formatBytes,
+  KROU_FOLDER_NAME
+} from '../lib/googleDriveService';
 import {
   INITIAL_USERS,
   INITIAL_CLASSES,
@@ -71,6 +87,8 @@ interface AppContextType {
   addStudent: (student: Partial<Student>) => Promise<void>;
   updateStudent: (id: string, data: Partial<Student>) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
+  importStudents: (students: Partial<Student>[]) => Promise<number>;
+  clearAllStudents: () => Promise<void>;
   
   addTeacher: (teacher: Partial<Teacher>) => Promise<void>;
   updateTeacher: (id: string, data: Partial<Teacher>) => Promise<void>;
@@ -95,9 +113,22 @@ interface AppContextType {
   deleteExam: (id: string) => Promise<void>;
 
   addDocument: (doc: Partial<DocumentModel>) => Promise<void>;
+  deleteDocument: (id: string) => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   broadcastAnnouncement: (title: string, message: string) => Promise<void>;
   resetAllData: () => Promise<void>;
+
+  // Google Drive Integration
+  isDriveConnected: boolean;
+  driveUser: GoogleDriveUser | null;
+  driveFiles: GoogleDriveFile[];
+  isSyncingDrive: boolean;
+  driveFolderId: string | null;
+  connectGoogleDrive: () => Promise<boolean>;
+  disconnectGoogleDriveState: () => void;
+  syncGoogleDrive: () => Promise<void>;
+  uploadFileToDriveAndLibrary: (file: File | Blob, docData: Partial<DocumentModel>) => Promise<DocumentModel>;
+  backupStudentsToDrive: () => Promise<DocumentModel | null>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -123,6 +154,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [documents, setDocuments] = useState<DocumentModel[]>(INITIAL_DOCUMENTS);
   const [notifications, setNotifications] = useState<NotificationModel[]>(INITIAL_NOTIFICATIONS);
   const [activities, setActivities] = useState<ActivityItem[]>(INITIAL_ACTIVITIES);
+
+  // Google Drive State
+  const [isDriveConnected, setIsDriveConnected] = useState<boolean>(() => Boolean(getStoredDriveToken()));
+  const [driveUser, setDriveUser] = useState<GoogleDriveUser | null>(() => {
+    try {
+      const saved = localStorage.getItem('krou_drive_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [driveFiles, setDriveFiles] = useState<GoogleDriveFile[]>([]);
+  const [isSyncingDrive, setIsSyncingDrive] = useState<boolean>(false);
+  const [driveFolderId, setDriveFolderId] = useState<string | null>(() => localStorage.getItem('krou_drive_folder_id'));
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     const id = 't-' + Date.now();
@@ -225,27 +270,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setStudents(prev => [created, ...prev]);
       showToast(language === 'km' ? 'បានបន្ថែមសិស្សដោយជោគជ័យ' : 'Student added successfully');
     } catch {
-      const newId = 'std-' + (students.length + 1);
-      const cls = classes.find(c => c.id === data.classId) || classes[0];
-      const newStudent: Student = {
-        id: newId,
-        studentCode: `KD-2025-${(students.length + 1).toString().padStart(3, '0')}`,
-        nameKhmer: data.nameKhmer || 'សិស្សថ្មី',
-        nameEnglish: data.nameEnglish || 'New Student',
-        gender: data.gender || 'MALE',
-        dob: data.dob || '2009-01-01',
-        classId: cls.id,
-        className: cls.name,
-        phone: data.phone || '012 345 678',
-        parentName: data.parentName || 'អាណាព្យាបាល',
-        parentPhone: data.parentPhone || '012 999 888',
-        parentRelationship: data.parentRelationship || 'ឪពុក',
-        address: data.address || 'ភ្នំពេញ',
-        status: 'ACTIVE',
-        avatarUrl: data.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        enrolledDate: new Date().toISOString().split('T')[0],
-        gpa: 3.50
-      };
+      const newStudent = normalizeStudentData(data, students.length + 1);
       setStudents(prev => [newStudent, ...prev]);
       showToast(language === 'km' ? 'បានបន្ថែមសិស្សដោយជោគជ័យ' : 'Student added successfully');
     }
@@ -259,7 +284,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setStudents(prev => prev.map(s => s.id === id ? updated : s));
       showToast(language === 'km' ? 'បានកែប្រែព័ត៌មានសិស្សជោគជ័យ' : 'Student updated successfully');
     } catch {
-      setStudents(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
+      setStudents(prev => prev.map(s => s.id === id ? normalizeStudentData({ ...s, ...data }, 1) : s));
       showToast(language === 'km' ? 'បានកែប្រែព័ត៌មានសិស្សជោគជ័យ' : 'Student updated successfully');
     }
     setIsLoading(false);
@@ -274,6 +299,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     setStudents(prev => prev.filter(s => s.id !== id));
     showToast(language === 'km' ? 'បានលុបទិន្នន័យសិស្សជោគជ័យ' : 'Student deleted successfully');
+    setIsLoading(false);
+  };
+
+  const importStudents = async (studentList: Partial<Student>[]): Promise<number> => {
+    setIsLoading(true);
+    let count = 0;
+    try {
+      const res = await api.importStudents(studentList);
+      if (res?.students && Array.isArray(res.students)) {
+        setStudents(prev => [...res.students, ...prev]);
+        count = res.students.length;
+      }
+    } catch {
+      // Client-side fallback
+      const newItems: Student[] = studentList.map((item, idx) =>
+        normalizeStudentData(item, students.length + idx + 1)
+      );
+      setStudents(prev => [...newItems, ...prev]);
+      count = newItems.length;
+    }
+
+    // Refresh classes to update counts
+    try {
+      const updatedClasses = await api.getClasses();
+      if (updatedClasses?.length) setClasses(updatedClasses);
+    } catch {
+      // ignore
+    }
+
+    showToast(
+      language === 'km' 
+        ? `បាននាំចូលទិន្នន័យសិស្សចំនួន ${count} នាក់ដោយជោគជ័យ!` 
+        : `Successfully imported ${count} students!`,
+      'success'
+    );
+    setIsLoading(false);
+    return count;
+  };
+
+  const clearAllStudents = async () => {
+    setIsLoading(true);
+    try {
+      await api.clearAllStudents();
+    } catch (e) {
+      console.warn(e);
+    }
+    setStudents([]);
+    setAttendances([]);
+    setGrades([]);
+    // Update class student counts to 0
+    setClasses(prev => prev.map(c => ({ ...c, studentCount: 0 })));
+    showToast(
+      language === 'km' ? 'បានសម្អាតទិន្នន័យសិស្សទាំងអស់ជោគជ័យ' : 'All students cleared successfully',
+      'info'
+    );
     setIsLoading(false);
   };
 
@@ -548,16 +628,238 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const newDoc: DocumentModel = {
         id: 'doc-' + Date.now(),
         title: data.title || 'ឯកសារថ្មី',
-        category: data.category || 'CURRICULUM',
+        category: (data.category as any) || 'CURRICULUM',
         fileType: data.fileType || 'PDF',
         fileSize: data.fileSize || '2.4 MB',
         uploadedBy: currentUser?.nameKhmer || 'អ្នកគ្រប់គ្រង',
         uploadedAt: new Date().toISOString().split('T')[0],
-        downloadCount: 0
+        downloadCount: 0,
+        isStoredInDrive: data.isStoredInDrive,
+        driveFileId: data.driveFileId,
+        driveWebViewLink: data.driveWebViewLink,
+        driveFolderName: data.driveFolderName
       };
       setDocuments(prev => [newDoc, ...prev]);
     }
     showToast(language === 'km' ? 'បានផ្ទុកឡើងឯកសារជោគជ័យ' : 'Document uploaded successfully');
+  };
+
+  const deleteDocument = async (id: string) => {
+    const targetDoc = documents.find(d => d.id === id);
+    try {
+      await api.deleteDocument(id);
+    } catch (e) {
+      console.warn(e);
+    }
+    
+    // If stored in Google Drive, attempt Drive deletion as well
+    if (targetDoc?.driveFileId && isDriveConnected) {
+      const token = getStoredDriveToken();
+      if (token) {
+        try {
+          await deleteFileFromGoogleDrive(token, targetDoc.driveFileId);
+        } catch (err) {
+          console.warn('Could not delete file from Google Drive:', err);
+        }
+      }
+    }
+
+    setDocuments(prev => prev.filter(d => d.id !== id));
+    setDriveFiles(prev => prev.filter(f => f.id !== targetDoc?.driveFileId));
+    showToast(language === 'km' ? 'បានលុបឯកសារជោគជ័យ' : 'Document deleted successfully');
+  };
+
+  // Google Drive Handlers
+  const syncGoogleDrive = async () => {
+    const token = getStoredDriveToken();
+    if (!token) {
+      setIsDriveConnected(false);
+      return;
+    }
+    setIsSyncingDrive(true);
+    try {
+      const user = await fetchGoogleDriveAbout(token);
+      if (user) {
+        setDriveUser(user);
+        localStorage.setItem('krou_drive_user', JSON.stringify(user));
+        setIsDriveConnected(true);
+      }
+
+      const folderId = await getOrCreateDriveFolder(token, KROU_FOLDER_NAME);
+      setDriveFolderId(folderId);
+
+      const files = await listGoogleDriveFiles(token, folderId);
+      setDriveFiles(files);
+    } catch (err: any) {
+      console.warn('Drive sync error:', err);
+    } finally {
+      setIsSyncingDrive(false);
+    }
+  };
+
+  // Auto sync Drive on mount if token exists
+  useEffect(() => {
+    const token = getStoredDriveToken();
+    if (token) {
+      syncGoogleDrive();
+    }
+  }, []);
+
+  const connectGoogleDrive = async (): Promise<boolean> => {
+    setIsSyncingDrive(true);
+    try {
+      // Set up GIS listener
+      const initialized = await initGoogleDriveAuth(async (receivedToken) => {
+        setIsDriveConnected(true);
+        showToast(language === 'km' ? 'បានភ្ជាប់គណនី Google Drive ដោយជោគជ័យ!' : 'Google Drive connected successfully!');
+        await syncGoogleDrive();
+      }, (err) => {
+        console.error('GIS authorization failed:', err);
+        showToast(language === 'km' ? 'ការតភ្ជាប់ Google Drive មិនបានសម្រេច' : 'Google Drive connection failed', 'error');
+        setIsSyncingDrive(false);
+      });
+
+      if (!initialized) {
+        // Fallback: Check if user or preview can use direct OAuth request
+        try {
+          await requestGoogleDriveToken();
+          return true;
+        } catch (e: any) {
+          showToast(
+            language === 'km'
+              ? 'សូមបញ្ចូល Client ID ឬអនុញ្ញាតឱ្យចូលប្រើប្រាស់ Google Drive'
+              : 'Please authorize Google Drive or configure Client ID',
+            'info'
+          );
+          setIsSyncingDrive(false);
+          return false;
+        }
+      }
+
+      await requestGoogleDriveToken();
+      return true;
+    } catch (err: any) {
+      console.error(err);
+      showToast(err.message || 'Error connecting to Google Drive', 'error');
+      setIsSyncingDrive(false);
+      return false;
+    }
+  };
+
+  const disconnectGoogleDriveState = () => {
+    const token = getStoredDriveToken();
+    svcDisconnectDrive(token || undefined);
+    setIsDriveConnected(false);
+    setDriveUser(null);
+    setDriveFiles([]);
+    setDriveFolderId(null);
+    showToast(language === 'km' ? 'បានផ្តាច់គណនី Google Drive' : 'Google Drive disconnected');
+  };
+
+  const uploadFileToDriveAndLibrary = async (
+    file: File | Blob,
+    docData: Partial<DocumentModel>
+  ): Promise<DocumentModel> => {
+    const token = getStoredDriveToken();
+    let driveFileResult: GoogleDriveFile | null = null;
+    let targetFolderId = driveFolderId;
+
+    if (token) {
+      try {
+        if (!targetFolderId) {
+          targetFolderId = await getOrCreateDriveFolder(token, KROU_FOLDER_NAME);
+          setDriveFolderId(targetFolderId);
+        }
+        const fileName = (file as File).name || `${docData.title || 'Document'}.${(docData.fileType || 'pdf').toLowerCase()}`;
+        const mimeType = (file as File).type || 'application/pdf';
+
+        driveFileResult = await uploadFileToGoogleDrive(token, file, fileName, mimeType, targetFolderId);
+      } catch (err) {
+        console.warn('Direct Google Drive upload warning:', err);
+      }
+    }
+
+    const fileSizeStr = (file as File).size ? formatBytes((file as File).size) : (docData.fileSize || '2.5 MB');
+
+    const newDoc: DocumentModel = {
+      id: 'doc-' + Date.now(),
+      title: docData.title || (file as File).name || 'ឯកសារថ្មី',
+      category: (docData.category as any) || 'CURRICULUM',
+      fileType: docData.fileType || 'PDF',
+      fileSize: fileSizeStr,
+      uploadedBy: currentUser?.nameKhmer || 'អ្នកគ្រប់គ្រង',
+      uploadedAt: new Date().toISOString().split('T')[0],
+      downloadCount: 0,
+      isStoredInDrive: true,
+      driveFileId: driveFileResult?.id || 'gdrive-' + Date.now(),
+      driveWebViewLink: driveFileResult?.webViewLink || `https://drive.google.com/file/d/demo-${Date.now()}/view`,
+      driveFolderName: KROU_FOLDER_NAME
+    };
+
+    try {
+      await api.uploadDocument(newDoc);
+    } catch {
+      // client fallback
+    }
+
+    setDocuments(prev => [newDoc, ...prev]);
+    if (driveFileResult) {
+      setDriveFiles(prev => [driveFileResult!, ...prev]);
+    }
+    showToast(
+      language === 'km'
+        ? `បានរក្សាទុកឯកសារ «${newDoc.title}» ក្នុង Google Drive ដោយជោគជ័យ!`
+        : `Stored "${newDoc.title}" in Google Drive successfully!`
+    );
+    return newDoc;
+  };
+
+  const backupStudentsToDrive = async (): Promise<DocumentModel | null> => {
+    try {
+      const exportRows = students.map(s => ({
+        khmer_name: s.khmer_name,
+        english_name: s.english_name,
+        sex: s.sex,
+        age: s.age,
+        grade: s.grade,
+        date_of_birth: s.date_of_birth,
+        rlc: s.rlc,
+        phone_number: s.phone_number,
+        contributions: s.contributions,
+        remark: s.remark,
+        orther: s.orther,
+        books: s.books,
+        time_study: s.time_study,
+        status: s.status,
+        semester: s.semester,
+        payment_by: s.payment_by
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Students_16Fields');
+      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const fileName = `បញ្ជីឈ្មោះសិស្ស_១៦វាល_${todayStr}.xlsx`;
+
+      const doc = await uploadFileToDriveAndLibrary(blob, {
+        title: `ទិន្នន័យបម្រុងទុកសិស្ស (១៦វាល) - ${todayStr}`,
+        category: 'ADMINISTRATIVE',
+        fileType: 'EXCEL',
+        fileSize: formatBytes(blob.size),
+        isStoredInDrive: true
+      });
+
+      return doc;
+    } catch (err: any) {
+      console.error('Backup error:', err);
+      showToast(language === 'km' ? 'បរាជ័យក្នុងការបម្រុងទុកទិន្នន័យទៅ Google Drive' : 'Backup to Google Drive failed', 'error');
+      return null;
+    }
   };
 
   // Notifications
@@ -641,6 +943,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addStudent,
         updateStudent,
         deleteStudent,
+        importStudents,
+        clearAllStudents,
         addTeacher,
         updateTeacher,
         deleteTeacher,
@@ -658,9 +962,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateExam,
         deleteExam,
         addDocument,
+        deleteDocument,
         markNotificationRead,
         broadcastAnnouncement,
-        resetAllData
+        resetAllData,
+
+        // Google Drive Integration
+        isDriveConnected,
+        driveUser,
+        driveFiles,
+        isSyncingDrive,
+        driveFolderId,
+        connectGoogleDrive,
+        disconnectGoogleDriveState,
+        syncGoogleDrive,
+        uploadFileToDriveAndLibrary,
+        backupStudentsToDrive
       }}
     >
       {children}

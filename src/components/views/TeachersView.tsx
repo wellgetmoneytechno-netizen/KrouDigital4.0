@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Teacher } from '../../types';
+import { ProfilePhotoUploader } from '../common/ProfilePhotoUploader';
 import {
   UserCheck,
   Search,
@@ -147,9 +148,20 @@ export const TeachersView: React.FC = () => {
             <div>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-600 to-teal-400 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-                    {teacher.nameKhmer.slice(0, 2)}
-                  </div>
+                  {teacher.avatarUrl ? (
+                    <img
+                      src={teacher.avatarUrl}
+                      alt={teacher.nameKhmer}
+                      className="w-12 h-12 rounded-2xl object-cover shadow-sm ring-1 ring-slate-200 shrink-0"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-600 to-teal-400 flex items-center justify-center text-white font-bold text-lg shadow-sm shrink-0">
+                      {teacher.nameKhmer.slice(0, 2)}
+                    </div>
+                  )}
                   <div>
                     <h3 className="font-bold text-sm text-slate-900">{teacher.nameKhmer}</h3>
                     <div className="text-xs text-slate-400">{teacher.nameEnglish} • {teacher.teacherCode}</div>
@@ -243,6 +255,14 @@ export const TeachersView: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateSubmit} className="space-y-3 text-xs">
+              <ProfilePhotoUploader
+                currentPhotoUrl={formData.avatarUrl}
+                name={formData.nameKhmer || formData.nameEnglish}
+                gender={formData.gender}
+                onChange={(url) => setFormData({ ...formData, avatarUrl: url })}
+                isKm={isKm}
+              />
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">{isKm ? 'ឈ្មោះខ្មែរ *' : 'Khmer Name *'}</label>
@@ -326,6 +346,139 @@ export const TeachersView: React.FC = () => {
                   className="px-5 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl shadow-md shadow-cyan-600/20"
                 >
                   {isKm ? 'រក្សាទុក' : 'Save Teacher'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT TEACHER MODAL */}
+      {showEditModal && selectedTeacher && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-blue-600" />
+                <span>{isKm ? 'កែប្រែព័ត៌មានគ្រូបង្រៀន' : 'Edit Teacher Profile'}</span>
+              </h3>
+              <button onClick={() => setShowEditModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="space-y-3 text-xs">
+              <ProfilePhotoUploader
+                currentPhotoUrl={formData.avatarUrl}
+                name={formData.nameKhmer || formData.nameEnglish}
+                gender={formData.gender}
+                onChange={(url) => setFormData({ ...formData, avatarUrl: url })}
+                isKm={isKm}
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">{isKm ? 'ឈ្មោះខ្មែរ *' : 'Khmer Name *'}</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.nameKhmer || ''}
+                    onChange={(e) => setFormData({ ...formData, nameKhmer: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">{isKm ? 'ឈ្មោះឡាតាំង' : 'English Name'}</label>
+                  <input
+                    type="text"
+                    value={formData.nameEnglish || ''}
+                    onChange={(e) => setFormData({ ...formData, nameEnglish: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">{isKm ? 'ភេទ' : 'Gender'}</label>
+                  <select
+                    value={formData.gender || 'MALE'}
+                    onChange={(e) => setFormData({ ...formData, gender: e.target.value as 'MALE' | 'FEMALE' })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                  >
+                    <option value="MALE">{isKm ? 'ប្រុស' : 'Male'}</option>
+                    <option value="FEMALE">{isKm ? 'ស្រី' : 'Female'}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">{isKm ? 'លេខទូរស័ព្ទ' : 'Phone'}</label>
+                  <input
+                    type="text"
+                    value={formData.phone || ''}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">{isKm ? 'អ៊ីមែល' : 'Email'}</label>
+                  <input
+                    type="email"
+                    value={formData.email || ''}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">{isKm ? 'ដេប៉ាតឺម៉ង់' : 'Department'}</label>
+                  <input
+                    type="text"
+                    value={formData.department || ''}
+                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">{isKm ? 'កម្រិតសញ្ញាបត្រ' : 'Degree'}</label>
+                  <input
+                    type="text"
+                    value={formData.degree || ''}
+                    onChange={(e) => setFormData({ ...formData, degree: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">{isKm ? 'ស្ថានភាព' : 'Status'}</label>
+                  <select
+                    value={formData.status || 'ACTIVE'}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as 'ACTIVE' | 'LEAVE' | 'INACTIVE' })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                  >
+                    <option value="ACTIVE">{isKm ? 'កំពុងបង្រៀន (Active)' : 'Active'}</option>
+                    <option value="LEAVE">{isKm ? 'សុំច្បាប់ (On Leave)' : 'On Leave'}</option>
+                    <option value="INACTIVE">{isKm ? 'ផ្អាក (Inactive)' : 'Inactive'}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-medium cursor-pointer"
+                >
+                  {isKm ? 'បោះបង់' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md shadow-blue-600/20 cursor-pointer"
+                >
+                  {isKm ? 'រក្សាទុកការកែប្រែ' : 'Update Profile'}
                 </button>
               </div>
             </form>

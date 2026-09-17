@@ -78,6 +78,56 @@ export const api = {
     return await res.json();
   },
 
+  async importStudents(students: Partial<Student>[]): Promise<{ success: boolean; count: number; students: Student[] }> {
+    if (!students || students.length === 0) {
+      return { success: true, count: 0, students: [] };
+    }
+
+    // Process in batches of 100 to prevent large request payloads and network bottlenecks
+    const BATCH_SIZE = 100;
+    const allImported: Student[] = [];
+    let totalCount = 0;
+
+    for (let i = 0; i < students.length; i += BATCH_SIZE) {
+      const batch = students.slice(i, i + BATCH_SIZE);
+      const res = await fetch('/api/students/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ students: batch })
+      });
+
+      if (!res.ok) {
+        let errDetail = `HTTP ${res.status}`;
+        try {
+          const errJson = await res.json();
+          if (errJson?.error) errDetail = errJson.error;
+        } catch {
+          // ignore
+        }
+        throw new Error(errDetail);
+      }
+
+      const data = await res.json();
+      if (data?.students && Array.isArray(data.students)) {
+        allImported.push(...data.students);
+        totalCount += data.count || data.students.length;
+      }
+    }
+
+    return {
+      success: true,
+      count: totalCount,
+      students: allImported
+    };
+  },
+
+  async clearAllStudents(): Promise<{ success: boolean; count: number }> {
+    const res = await fetch('/api/students', {
+      method: 'DELETE'
+    });
+    return await res.json();
+  },
+
   // Teachers
   async getTeachers(): Promise<Teacher[]> {
     try {
@@ -315,6 +365,27 @@ export const api = {
       body: JSON.stringify(data)
     });
     return await res.json();
+  },
+
+  async deleteDocument(id: string): Promise<{ success: boolean }> {
+    const res = await fetch(`/api/documents/${id}`, {
+      method: 'DELETE'
+    });
+    return await res.json();
+  },
+
+  async getDriveConfig(): Promise<{ clientId: string; projectId: string; projectNumber: string; scope: string }> {
+    try {
+      const res = await fetch('/api/drive/config');
+      return await res.json();
+    } catch {
+      return {
+        clientId: '',
+        projectId: 'gen-lang-client-0742622527',
+        projectNumber: '470039681099',
+        scope: 'https://www.googleapis.com/auth/drive.file'
+      };
+    }
   },
 
   // Notifications

@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import {
   INITIAL_USERS,
@@ -16,6 +17,7 @@ import {
   INITIAL_ACTIVITIES
 } from './src/lib/data/initialData';
 import { Student, Teacher, ClassModel, SubjectModel, AttendanceRecord, GradeRecord, ScheduleItem, ExamModel, DocumentModel, NotificationModel, ActivityItem } from './src/types';
+import { normalizeStudentData } from './src/lib/studentUtils';
 
 // In-Memory Database initialized with realistic Khmer demo dataset
 let users = [...INITIAL_USERS];
@@ -35,7 +37,26 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  // Increase body size limit to 50MB to support large CSV/Excel datasets, avatars, and bulk operations
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+  // Handle oversized payload or malformed JSON errors gracefully
+  app.use((err: any, req: Request, res: Response, next: any) => {
+    if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+      return res.status(413).json({
+        error: 'ទំហំឯកសារធំពេក (Payload too large). សូមជ្រើសរើសឯកសារតូចជាង 50MB។',
+        status: 413
+      });
+    }
+    if (err && err.status === 400 && 'body' in err) {
+      return res.status(400).json({
+        error: 'ទម្រង់ទិន្នន័យមិនត្រឹមត្រូវ (Malformed JSON payload)',
+        status: 400
+      });
+    }
+    next(err);
+  });
 
   // CORS / security headers
   app.use((req, res, next) => {
@@ -105,15 +126,21 @@ async function startServer() {
     if (search && typeof search === 'string') {
       const q = search.toLowerCase();
       result = result.filter(s => 
-        s.nameKhmer.toLowerCase().includes(q) ||
-        s.nameEnglish.toLowerCase().includes(q) ||
-        s.studentCode.toLowerCase().includes(q) ||
-        (s.phone && s.phone.includes(q))
+        (s.khmer_name && s.khmer_name.toLowerCase().includes(q)) ||
+        (s.nameKhmer && s.nameKhmer.toLowerCase().includes(q)) ||
+        (s.english_name && s.english_name.toLowerCase().includes(q)) ||
+        (s.nameEnglish && s.nameEnglish.toLowerCase().includes(q)) ||
+        (s.rlc && s.rlc.toLowerCase().includes(q)) ||
+        (s.studentCode && s.studentCode.toLowerCase().includes(q)) ||
+        (s.grade && s.grade.toLowerCase().includes(q)) ||
+        (s.phone_number && s.phone_number.includes(q)) ||
+        (s.remark && s.remark.toLowerCase().includes(q)) ||
+        (s.orther && s.orther.toLowerCase().includes(q))
       );
     }
 
     if (classId && typeof classId === 'string' && classId !== 'ALL') {
-      result = result.filter(s => s.classId === classId);
+      result = result.filter(s => s.classId === classId || s.grade === classId);
     }
 
     if (status && typeof status === 'string' && status !== 'ALL') {
@@ -125,28 +152,7 @@ async function startServer() {
 
   app.post('/api/students', (req: Request, res: Response) => {
     const body = req.body;
-    const newId = 'std-' + (students.length + 1).toString().padStart(3, '0');
-    const newCode = `KD-2025-${(students.length + 1).toString().padStart(3, '0')}`;
-
-    const newStudent: Student = {
-      id: newId,
-      studentCode: body.studentCode || newCode,
-      nameKhmer: body.nameKhmer || 'សិស្សថ្មី',
-      nameEnglish: body.nameEnglish || 'New Student',
-      gender: body.gender || 'MALE',
-      dob: body.dob || '2009-01-01',
-      classId: body.classId || (classes[0]?.id || 'cls-12a'),
-      className: classes.find(c => c.id === body.classId)?.name || 'ថ្នាក់ទី១២ ក',
-      phone: body.phone || '012 345 678',
-      parentName: body.parentName || 'អាណាព្យាបាល',
-      parentPhone: body.parentPhone || '012 999 888',
-      parentRelationship: body.parentRelationship || 'ឪពុក',
-      address: body.address || 'រាជធានីភ្នំពេញ',
-      status: 'ACTIVE',
-      avatarUrl: body.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      enrolledDate: new Date().toISOString().split('T')[0],
-      gpa: 3.50
-    };
+    const newStudent: Student = normalizeStudentData(body, students.length + 1);
 
     students.unshift(newStudent);
 
@@ -154,7 +160,7 @@ async function startServer() {
     activities.unshift({
       id: 'act-' + Date.now(),
       action: 'បានចុះឈ្មោះសិស្សថ្មី',
-      target: `${newStudent.nameKhmer} (${newStudent.studentCode})`,
+      target: `${newStudent.khmer_name} (${newStudent.rlc})`,
       userName: 'អ្នកគ្រប់គ្រងសាលា',
       timeAgo: 'ទើបតែបញ្ចូល',
       type: 'STUDENT'
@@ -175,11 +181,7 @@ async function startServer() {
     const index = students.findIndex(s => s.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'រកមិនឃើញសិស្ស' });
     
-    const updated = { ...students[index], ...req.body };
-    if (req.body.classId) {
-      const cls = classes.find(c => c.id === req.body.classId);
-      if (cls) updated.className = cls.name;
-    }
+    const updated = normalizeStudentData({ ...students[index], ...req.body }, index + 1);
     students[index] = updated;
     res.json(updated);
   });
@@ -189,6 +191,57 @@ async function startServer() {
     if (index === -1) return res.status(404).json({ error: 'រកមិនឃើញសិស្ស' });
     const deleted = students.splice(index, 1)[0];
     res.json({ success: true, message: 'បានលុបទិន្នន័យសិស្សជោគជ័យ', deleted });
+  });
+
+  // Bulk import students (CSV / Excel)
+  app.post('/api/students/import', (req: Request, res: Response) => {
+    const importedList = req.body.students;
+    if (!Array.isArray(importedList) || importedList.length === 0) {
+      return res.status(400).json({ error: 'មិនមានទិន្នន័យសិស្សសម្រាប់នាំចូលឡើយ' });
+    }
+
+    const newStudents: Student[] = importedList.map((item, idx) => {
+      return normalizeStudentData(item, students.length + idx + 1);
+    });
+
+    students.unshift(...newStudents);
+
+    // Record activity
+    activities.unshift({
+      id: 'act-' + Date.now(),
+      action: 'បាននាំចូលទិន្នន័យសិស្ស (CSV/Excel)',
+      target: `${newStudents.length} នាក់ ជោគជ័យ`,
+      userName: 'អ្នកគ្រប់គ្រងសាលា',
+      timeAgo: 'ទើបតែនាំចូល',
+      type: 'STUDENT'
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `បាននាំចូលទិន្នន័យសិស្សចំនួន ${newStudents.length} នាក់ដោយជោគជ័យ`,
+      count: newStudents.length,
+      students: newStudents
+    });
+  });
+
+  // Clear all students endpoint
+  app.delete('/api/students', (req: Request, res: Response) => {
+    const count = students.length;
+    students = [];
+    attendances = [];
+    grades = [];
+    
+    // Record activity
+    activities.unshift({
+      id: 'act-' + Date.now(),
+      action: 'បានសម្អាតទិន្នន័យសិស្សទាំងអស់',
+      target: `${count} នាក់`,
+      userName: 'អ្នកគ្រប់គ្រងសាលា',
+      timeAgo: 'ទើបតែលុប',
+      type: 'STUDENT'
+    });
+
+    res.json({ success: true, message: `បានសម្អាតទិន្នន័យសិស្សទាំងអស់ (${count} នាក់) ជោគជ័យ`, count });
   });
 
   // Teachers CRUD
@@ -234,7 +287,11 @@ async function startServer() {
 
   // Classes CRUD
   app.get('/api/classes', (req: Request, res: Response) => {
-    res.json(classes);
+    const classesWithCount = classes.map(c => ({
+      ...c,
+      studentCount: students.filter(s => s.classId === c.id).length
+    }));
+    res.json(classesWithCount);
   });
 
   app.post('/api/classes', (req: Request, res: Response) => {
@@ -464,6 +521,36 @@ async function startServer() {
     res.json({ success: true, message: 'បានលុបការប្រឡង', removed });
   });
 
+  // Google Drive Config & Integration
+  app.get('/api/drive/config', (req: Request, res: Response) => {
+    let clientId = '';
+    try {
+      const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      if (fs.existsSync(configPath)) {
+        const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (parsed.oAuthClientId) {
+          clientId = parsed.oAuthClientId;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read firebase-applet-config.json:', e);
+    }
+
+    if (!clientId && process.env.GOOGLE_OAUTH_CLIENT_ID) {
+      clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+    }
+    if (!clientId) {
+      clientId = '470039681099-npvjd9nguvogu7qrokofro5ujp5b920m.apps.googleusercontent.com';
+    }
+
+    res.json({
+      clientId,
+      projectId: 'gen-lang-client-0742622527',
+      projectNumber: '470039681099',
+      scope: 'https://www.googleapis.com/auth/drive.file'
+    });
+  });
+
   // Documents
   app.get('/api/documents', (req: Request, res: Response) => {
     res.json(documents);
@@ -472,17 +559,31 @@ async function startServer() {
   app.post('/api/documents', (req: Request, res: Response) => {
     const body = req.body;
     const newDoc: DocumentModel = {
-      id: 'doc-' + Date.now(),
+      id: body.id || 'doc-' + Date.now(),
       title: body.title || 'ឯកសារអប់រំថ្មី',
       category: body.category || 'CURRICULUM',
       fileType: body.fileType || 'PDF',
       fileSize: body.fileSize || '1.5 MB',
       uploadedBy: body.uploadedBy || 'អ្នកគ្រប់គ្រងសាលា',
       uploadedAt: new Date().toISOString().split('T')[0],
-      downloadCount: 0
+      downloadCount: 0,
+      isStoredInDrive: Boolean(body.isStoredInDrive),
+      driveFileId: body.driveFileId,
+      driveWebViewLink: body.driveWebViewLink,
+      driveDownloadUrl: body.driveDownloadUrl,
+      driveIconLink: body.driveIconLink,
+      driveFolderId: body.driveFolderId,
+      driveFolderName: body.driveFolderName || 'KrouDigital 4.0 - បណ្ណាល័យសាលា'
     };
     documents.unshift(newDoc);
     res.status(201).json(newDoc);
+  });
+
+  app.delete('/api/documents/:id', (req: Request, res: Response) => {
+    const index = documents.findIndex(d => d.id === req.params.id);
+    if (index === -1) return res.status(404).json({ error: 'រកមិនឃើញឯកសារ' });
+    const removed = documents.splice(index, 1)[0];
+    res.json({ success: true, message: 'បានលុបឯកសារជោគជ័យ', removed });
   });
 
   // Notifications

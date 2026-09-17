@@ -16,23 +16,62 @@ export interface User {
 
 export interface Student {
   id: string;
-  studentCode: string; // e.g. KD-2025-001
-  nameKhmer: string;
-  nameEnglish: string;
-  gender: 'MALE' | 'FEMALE';
-  dob: string; // YYYY-MM-DD
-  classId: string;
-  className: string;
+  // 16 Exact Fields from specification:
+  khmer_name: string;
+  english_name: string;
+  sex: string; // 'ប្រុស' | 'ស្រី' | 'MALE' | 'FEMALE'
+  age: number | string;
+  grade: string;
+  date_of_birth: string;
+  rlc: string;
+  phone_number: string;
+  contributions: string;
+  remark: string;
+  orther: string; // matches user's exact specification 'orther'
+  books: string;
+  time_study: string;
+  status: string;
+  semester: string;
+  payment_by: string;
+
+  // Compatibility & extended system fields
+  studentCode?: string;
+  nameKhmer?: string;
+  nameEnglish?: string;
+  gender?: 'MALE' | 'FEMALE' | string;
+  dob?: string;
+  classId?: string;
+  className?: string;
   phone?: string;
-  parentName: string;
-  parentPhone: string;
+  parentName?: string;
+  parentPhone?: string;
   parentRelationship?: string;
-  address: string;
-  status: 'ACTIVE' | 'SUSPENDED' | 'GRADUATED' | 'TRANSFERRED';
+  address?: string;
   avatarUrl?: string;
-  enrolledDate: string;
+  enrolledDate?: string;
   gpa?: number;
 }
+
+export const STUDENT_FIELD_KEYS = [
+  'khmer_name',
+  'english_name',
+  'sex',
+  'age',
+  'grade',
+  'date_of_birth',
+  'rlc',
+  'phone_number',
+  'contributions',
+  'remark',
+  'orther',
+  'books',
+  'time_study',
+  'status',
+  'semester',
+  'payment_by'
+] as const;
+
+export type StudentFieldKey = typeof STUDENT_FIELD_KEYS[number];
 
 export interface Teacher {
   id: string;
@@ -147,12 +186,44 @@ export interface ExamModel {
 export interface DocumentModel {
   id: string;
   title: string;
-  category: 'CURRICULUM' | 'REGULATION' | 'EXAM_PAPER' | 'LESSON_PLAN' | 'FORM';
-  fileType: 'PDF' | 'DOCX' | 'XLSX';
+  category: 'CURRICULUM' | 'REGULATION' | 'EXAM_PAPER' | 'LESSON_PLAN' | 'FORM' | 'POLICY' | 'WORKSHEET' | 'ADMINISTRATIVE';
+  fileType: 'PDF' | 'DOCX' | 'XLSX' | 'WORD' | 'EXCEL' | string;
   fileSize: string;
   uploadedBy: string;
   uploadedAt: string;
   downloadCount: number;
+  // Google Drive integration attributes
+  isStoredInDrive?: boolean;
+  driveFileId?: string;
+  driveWebViewLink?: string;
+  driveDownloadUrl?: string;
+  driveIconLink?: string;
+  driveFolderId?: string;
+  driveFolderName?: string;
+}
+
+export interface GoogleDriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: string | number;
+  modifiedTime?: string;
+  webViewLink?: string;
+  webContentLink?: string;
+  iconLink?: string;
+  thumbnailLink?: string;
+  parents?: string[];
+}
+
+export interface GoogleDriveUser {
+  displayName?: string;
+  emailAddress?: string;
+  photoLink?: string;
+  storageQuota?: {
+    limit?: string;
+    usage?: string;
+    usageInDrive?: string;
+  };
 }
 
 export interface NotificationModel {
