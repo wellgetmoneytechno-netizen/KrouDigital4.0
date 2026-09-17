@@ -1,0 +1,6 @@
+{
+  "name": "KrouDigital4.0",
+  "description": "Khmer Digital Education & School Management Platform with comprehensive student, teacher, class, attendance, grades, and schedule management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
