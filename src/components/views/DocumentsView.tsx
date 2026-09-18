@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DocumentModel } from '../../types';
+import { GoogleOAuthOriginModal } from '../common/GoogleOAuthOriginModal';
 import {
   FolderClosed,
   Plus,
@@ -17,7 +18,8 @@ import {
   FileSpreadsheet,
   AlertCircle,
   Database,
-  ArrowUpRight
+  ArrowUpRight,
+  ShieldAlert
 } from 'lucide-react';
 
 export const DocumentsView: React.FC = () => {
@@ -43,6 +45,14 @@ export const DocumentsView: React.FC = () => {
 
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showOAuthModal, setShowOAuthModal] = useState(false);
+
+  const handleConnectDrive = async () => {
+    const ok = await connectGoogleDrive();
+    if (!ok) {
+      setShowOAuthModal(true);
+    }
+  };
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [storeInDrive, setStoreInDrive] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
@@ -271,18 +281,29 @@ export const DocumentsView: React.FC = () => {
                 </button>
               </>
             ) : (
-              <button
-                onClick={connectGoogleDrive}
-                disabled={isSyncingDrive}
-                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/20 transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                {isSyncingDrive ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Cloud className="w-4 h-4" />
-                )}
-                <span>{isKm ? 'ភ្ជាប់ជាមួយ Google Drive' : 'Connect Google Drive'}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleConnectDrive}
+                  disabled={isSyncingDrive}
+                  className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/20 transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSyncingDrive ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Cloud className="w-4 h-4" />
+                  )}
+                  <span>{isKm ? 'ភ្ជាប់ជាមួយ Google Drive' : 'Connect Google Drive'}</span>
+                </button>
+
+                <button
+                  onClick={() => setShowOAuthModal(true)}
+                  title={isKm ? 'ដោះស្រាយ Error 400 OAuth Origin Mismatch' : 'Fix OAuth Origin Error'}
+                  className="px-3 py-2 bg-white hover:bg-amber-50 text-amber-700 text-xs font-semibold rounded-xl border border-amber-200 shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ShieldAlert className="w-4 h-4 text-amber-500" />
+                  <span className="hidden sm:inline">{isKm ? 'ជួសជុល OAuth Origin' : 'Fix OAuth'}</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -587,6 +608,12 @@ export const DocumentsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Google OAuth Origin Mismatch Solution Modal */}
+      <GoogleOAuthOriginModal
+        isOpen={showOAuthModal}
+        onClose={() => setShowOAuthModal(false)}
+      />
     </div>
   );
 };

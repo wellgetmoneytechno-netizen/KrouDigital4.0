@@ -49,6 +49,27 @@ export const setStoredDriveToken = (token: string | null) => {
 };
 
 /**
+ * Activate Simulated Google Drive for offline or external hosts (GitHub Pages)
+ */
+export const activateSimulatedGoogleDrive = (): { token: string; user: GoogleDriveUser } => {
+  const simToken = 'krou_simulated_drive_' + Date.now();
+  setStoredDriveToken(simToken);
+  const user: GoogleDriveUser = {
+    displayName: 'Google Drive (Offline & GitHub Pages Mode)',
+    emailAddress: 'wellgetmoneytechno@gmail.com',
+    photoLink: '',
+    storageQuota: {
+      limit: '15 GB',
+      usage: '1.2 GB',
+      usageInDrive: '85 MB'
+    }
+  };
+  localStorage.setItem('krou_drive_user', JSON.stringify(user));
+  localStorage.setItem('krou_drive_folder_id', 'simulated_folder_krou4');
+  return { token: simToken, user };
+};
+
+/**
  * Fetch client ID from server config if not in env
  */
 export const fetchGoogleClientId = async (): Promise<string> => {
@@ -171,6 +192,18 @@ export const fetchGoogleDriveAbout = async (token: string): Promise<GoogleDriveU
   if (!token || typeof token !== 'string' || token.trim() === '') {
     return null;
   }
+  if (token.startsWith('krou_simulated_')) {
+    const cached = localStorage.getItem('krou_drive_user');
+    if (cached) {
+      try { return JSON.parse(cached); } catch {}
+    }
+    return {
+      displayName: 'Google Drive (GitHub Pages Mode)',
+      emailAddress: 'wellgetmoneytechno@gmail.com',
+      photoLink: '',
+      storageQuota: { limit: '15 GB', usage: '1.2 GB', usageInDrive: '85 MB' }
+    };
+  }
   try {
     const res = await fetch('https://www.googleapis.com/drive/v3/about?fields=user,storageQuota', {
       headers: {
@@ -206,6 +239,9 @@ export const fetchGoogleDriveAbout = async (token: string): Promise<GoogleDriveU
  * Get or create app dedicated folder in Google Drive
  */
 export const getOrCreateDriveFolder = async (token: string, folderName = KROU_FOLDER_NAME): Promise<string> => {
+  if (token.startsWith('krou_simulated_')) {
+    return 'simulated_krou_folder_id';
+  }
   const cachedFolderId = localStorage.getItem('krou_drive_folder_id');
   if (cachedFolderId) {
     // verify it still exists
@@ -264,6 +300,30 @@ export const getOrCreateDriveFolder = async (token: string, folderName = KROU_FO
  * List files stored in the app folder or user drive
  */
 export const listGoogleDriveFiles = async (token: string, folderId?: string): Promise<GoogleDriveFile[]> => {
+  if (token.startsWith('krou_simulated_')) {
+    const raw = localStorage.getItem('krou_simulated_files');
+    if (raw) {
+      try { return JSON.parse(raw); } catch {}
+    }
+    return [
+      {
+        id: 'sim-doc-01',
+        name: 'សៀវភៅគោលគណិតវិទ្យា_ថ្នាក់ទី១២_ក្រសួង.pdf',
+        mimeType: 'application/pdf',
+        size: '14.8 MB',
+        modifiedTime: new Date().toLocaleDateString('km-KH'),
+        webViewLink: 'https://moeys.gov.kh'
+      },
+      {
+        id: 'sim-doc-02',
+        name: 'ទិន្នន័យសិស្សទាំង១៦វាល_បម្រុងទុក_ស្វ័យប្រវត្តិ.json',
+        mimeType: 'application/json',
+        size: '240 KB',
+        modifiedTime: new Date().toLocaleDateString('km-KH'),
+        webViewLink: '#'
+      }
+    ];
+  }
   let query = "trashed = false and mimeType != 'application/vnd.google-apps.folder'";
   if (folderId) {
     query += ` and '${folderId}' in parents`;
@@ -306,6 +366,22 @@ export const uploadFileToGoogleDrive = async (
   mimeType: string,
   folderId?: string
 ): Promise<GoogleDriveFile> => {
+  if (token.startsWith('krou_simulated_')) {
+    const newFile: GoogleDriveFile = {
+      id: 'sim-file-' + Date.now(),
+      name: fileName,
+      mimeType: mimeType || 'application/octet-stream',
+      size: formatBytes(file.size),
+      modifiedTime: new Date().toLocaleDateString('km-KH'),
+      webViewLink: '#'
+    };
+    try {
+      const raw = localStorage.getItem('krou_simulated_files');
+      const current = raw ? JSON.parse(raw) : [];
+      localStorage.setItem('krou_simulated_files', JSON.stringify([newFile, ...current]));
+    } catch {}
+    return newFile;
+  }
   const metadata = {
     name: fileName,
     mimeType: mimeType || 'application/octet-stream',
