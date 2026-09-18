@@ -61,14 +61,23 @@ export const DocumentsView: React.FC = () => {
     { key: 'POLICY', labelKm: 'គោលការណ៍ណែនាំ', labelEn: 'Policies' },
     { key: 'WORKSHEET', labelKm: 'សន្លឹកកិច្ចការ', labelEn: 'Worksheets' },
     { key: 'ADMINISTRATIVE', labelKm: 'លិខិតរដ្ឋបាល', labelEn: 'Admin' },
-    { key: 'GDRIVE', labelKm: `Google Drive (${documents.filter(d => d.isStoredInDrive).length})`, labelEn: `Google Drive (${documents.filter(d => d.isStoredInDrive).length})` }
+    { key: 'GDRIVE', labelKm: 'Google Drive', labelEn: 'Google Drive' }
   ];
 
-  const filteredDocs = documents.filter(d => {
-    if (selectedCategory === 'ALL') return true;
-    if (selectedCategory === 'GDRIVE') return d.isStoredInDrive;
-    return d.category === selectedCategory;
-  });
+  const matchesCategory = (doc: DocumentModel, catKey: string) => {
+    if (catKey === 'ALL') return true;
+    if (catKey === 'GDRIVE') return Boolean(doc.isStoredInDrive);
+    if (catKey === 'POLICY') return doc.category === 'POLICY' || doc.category === 'REGULATION';
+    if (catKey === 'WORKSHEET') return doc.category === 'WORKSHEET' || doc.category === 'EXAM_PAPER';
+    if (catKey === 'ADMINISTRATIVE') return doc.category === 'ADMINISTRATIVE' || doc.category === 'FORM' || doc.category === 'LESSON_PLAN';
+    return doc.category === catKey;
+  };
+
+  const getCategoryCount = (catKey: string) => {
+    return documents.filter(d => matchesCategory(d, catKey)).length;
+  };
+
+  const filteredDocs = documents.filter(d => matchesCategory(d, selectedCategory));
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -281,33 +290,91 @@ export const DocumentsView: React.FC = () => {
 
       {/* Category Filter Pills */}
       <div className="flex flex-wrap items-center gap-2">
-        {categories.map((c) => (
-          <button
-            key={c.key}
-            onClick={() => setSelectedCategory(c.key)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
-              selectedCategory === c.key
-                ? 'bg-cyan-600 text-white shadow-xs shadow-cyan-600/20'
-                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
-            }`}
-          >
-            {isKm ? c.labelKm : c.labelEn}
-          </button>
-        ))}
+        {categories.map((c) => {
+          const count = getCategoryCount(c.key);
+          const isSelected = selectedCategory === c.key;
+          return (
+            <button
+              key={c.key}
+              onClick={() => setSelectedCategory(c.key)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                isSelected
+                  ? 'bg-cyan-600 text-white shadow-xs shadow-cyan-600/20'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+              }`}
+            >
+              <span>{isKm ? c.labelKm : c.labelEn}</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Document Cards */}
       {filteredDocs.length === 0 ? (
-        <div className="bg-white rounded-2xl p-10 border border-slate-100 text-center space-y-3">
-          <FolderClosed className="w-10 h-10 text-slate-300 mx-auto" />
-          <h4 className="text-sm font-bold text-slate-700">
-            {isKm ? 'រកមិនឃើញឯកសារក្នុងប្រភេទនេះទេ' : 'No documents found in this category'}
-          </h4>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            {isKm
-              ? 'សូមចុចប៊ូតុង «ផ្ទុកឡើងឯកសារ» ដើម្បីបន្ថែមឯកសារ ឬបម្រុងទុកទិន្នន័យសិស្សទៅ Google Drive។'
-              : 'Click "Upload Document" or backup student data to Google Drive.'}
-          </p>
+        <div className="bg-white rounded-2xl p-8 sm:p-12 border border-slate-100 text-center space-y-4 max-w-lg mx-auto shadow-xs">
+          <div className="w-14 h-14 rounded-2xl bg-cyan-50 border border-cyan-100 text-cyan-600 flex items-center justify-center mx-auto">
+            <FolderClosed className="w-7 h-7" />
+          </div>
+          <div>
+            <h4 className="text-base font-bold text-slate-800">
+              {isKm ? 'រកមិនឃើញឯកសារក្នុងប្រភេទនេះទេ' : 'No documents found in this category'}
+            </h4>
+            <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
+              {isKm
+                ? 'សូមចុចប៊ូតុងខាងក្រោមដើម្បីបន្ថែមឯកសារ ឬបម្រុងទុកទិន្នន័យសិស្សទាំង ១៦ វាល ទៅ Google Drive។'
+                : 'Click below to upload a new document or backup 16-field student data to Google Drive.'}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+            <button
+              onClick={() => {
+                const targetCat = (selectedCategory === 'ALL' || selectedCategory === 'GDRIVE') ? 'CURRICULUM' : selectedCategory;
+                setFormData({
+                  title: '',
+                  category: targetCat as any,
+                  fileType: 'PDF',
+                  fileSize: '2.5 MB'
+                });
+                setSelectedFile(null);
+                setStoreInDrive(selectedCategory === 'GDRIVE');
+                setShowUploadModal(true);
+              }}
+              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl shadow-xs shadow-cyan-600/20 transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>{isKm ? 'ផ្ទុកឡើងឯកសារ' : 'Upload Document'}</span>
+            </button>
+
+            <button
+              onClick={handleBackupStudents}
+              disabled={isBackingUp}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs shadow-emerald-600/20 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {isBackingUp ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Database className="w-3.5 h-3.5" />
+              )}
+              <span>{isKm ? 'បម្រុងទុកសិស្សទៅ Drive' : 'Backup Students to Drive'}</span>
+            </button>
+
+            {selectedCategory !== 'ALL' && (
+              <button
+                onClick={() => setSelectedCategory('ALL')}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
+              >
+                {isKm ? 'មើលឯកសារទាំងអស់' : 'View All'}
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

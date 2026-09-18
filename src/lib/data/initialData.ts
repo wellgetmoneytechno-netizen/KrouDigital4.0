@@ -313,12 +313,15 @@ export const INITIAL_DOCUMENTS: DocumentModel[] = [
     fileSize: '4.8 MB',
     uploadedBy: 'ក្រសួងអប់រំ យុវជន និងកីឡា',
     uploadedAt: '2025-08-20',
-    downloadCount: 342
+    downloadCount: 342,
+    isStoredInDrive: true,
+    driveWebViewLink: 'https://drive.google.com/file/d/demo-curriculum-2025/view',
+    driveFolderName: 'KrouDigital 4.0 - បណ្ណាល័យសាលា'
   },
   {
     id: 'doc-02',
     title: 'បទបញ្ជាផ្ទៃក្នុងសាលារៀន និងក្រមសីលធម៌សិស្សានុសិស្ស KrouDigital4.0',
-    category: 'REGULATION',
+    category: 'POLICY',
     fileType: 'PDF',
     fileSize: '1.2 MB',
     uploadedBy: 'គណៈគ្រប់គ្រងសាលា',
@@ -328,7 +331,7 @@ export const INITIAL_DOCUMENTS: DocumentModel[] = [
   {
     id: 'doc-03',
     title: 'វិញ្ញាសាគំរូ ត្រៀមប្រឡងសញ្ញាបត្របាក់ឌុប មុខវិជ្ជាគណិតវិទ្យា និងគន្លឹះដោះស្រាយ',
-    category: 'EXAM_PAPER',
+    category: 'WORKSHEET',
     fileType: 'PDF',
     fileSize: '3.1 MB',
     uploadedBy: 'លោកគ្រូ ហេង វណ្ណា',
@@ -338,12 +341,55 @@ export const INITIAL_DOCUMENTS: DocumentModel[] = [
   {
     id: 'doc-04',
     title: 'គំរូកិច្ចតែងការបង្រៀនតាមបែបស្ថាបនា និងបច្ចេកវិទ្យាឌីជីថល (ICT Integrated)',
-    category: 'LESSON_PLAN',
+    category: 'ADMINISTRATIVE',
     fileType: 'DOCX',
     fileSize: '890 KB',
     uploadedBy: 'អ្នកគ្រូ ចាន់ សុខា',
     uploadedAt: '2025-09-05',
     downloadCount: 114
+  },
+  {
+    id: 'doc-05',
+    title: 'គោលការណ៍ណែនាំស្តីពីការវាយតម្លៃលទ្ធផលសិក្សា និងការគណនាពិន្ទុមធ្យមភាគ',
+    category: 'POLICY',
+    fileType: 'PDF',
+    fileSize: '1.8 MB',
+    uploadedBy: 'ការិយាល័យសិក្សាធិការ',
+    uploadedAt: '2025-09-02',
+    downloadCount: 230
+  },
+  {
+    id: 'doc-06',
+    title: 'សន្លឹកកិច្ចការលំហាត់ប្រចាំសប្តាហ៍ មុខវិជ្ជារូបវិទ្យា និងគីមីវិទ្យា ថ្នាក់ទី១២',
+    category: 'WORKSHEET',
+    fileType: 'PDF',
+    fileSize: '2.4 MB',
+    uploadedBy: 'គណៈកម្មការបច្ចេកទេសវិទ្យាសាស្ត្រ',
+    uploadedAt: '2025-09-12',
+    downloadCount: 410
+  },
+  {
+    id: 'doc-07',
+    title: 'ទម្រង់បែបបទស្នើសុំច្បាប់ឈប់សម្រាក និងលិខិតបញ្ជាក់ការសិក្សារបស់សិស្ស',
+    category: 'ADMINISTRATIVE',
+    fileType: 'DOCX',
+    fileSize: '650 KB',
+    uploadedBy: 'លេខាធិការដ្ឋានសាលា',
+    uploadedAt: '2025-09-08',
+    downloadCount: 175
+  },
+  {
+    id: 'doc-08',
+    title: 'ទិន្នន័យបម្រុងទុកបញ្ជីសិស្ស (១៦ វាល) ក្នុង Google Drive - KrouDigital4.0',
+    category: 'ADMINISTRATIVE',
+    fileType: 'EXCEL',
+    fileSize: '2.1 MB',
+    uploadedBy: 'ប្រព័ន្ធស្វ័យប្រវត្តិ (Google Drive Cloud)',
+    uploadedAt: '2025-09-15',
+    downloadCount: 88,
+    isStoredInDrive: true,
+    driveWebViewLink: 'https://drive.google.com/file/d/demo-backup-students/view',
+    driveFolderName: 'KrouDigital 4.0 - បណ្ណាល័យសាលា'
   }
 ];
 
