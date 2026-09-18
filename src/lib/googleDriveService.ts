@@ -168,6 +168,9 @@ export const disconnectGoogleDrive = (token?: string) => {
  * Get Google Drive About / User Profile & Storage info
  */
 export const fetchGoogleDriveAbout = async (token: string): Promise<GoogleDriveUser | null> => {
+  if (!token || typeof token !== 'string' || token.trim() === '') {
+    return null;
+  }
   try {
     const res = await fetch('https://www.googleapis.com/drive/v3/about?fields=user,storageQuota', {
       headers: {
@@ -175,10 +178,12 @@ export const fetchGoogleDriveAbout = async (token: string): Promise<GoogleDriveU
       }
     });
     if (!res.ok) {
-      if (res.status === 401) {
+      if (res.status === 401 || res.status === 403) {
         setStoredDriveToken(null);
+        localStorage.removeItem('krou_drive_user');
       }
-      throw new Error(`Failed to fetch Drive About: ${res.statusText}`);
+      console.warn(`Drive About returned ${res.status}: ${res.statusText || 'Unauthorized or expired token'}`);
+      return null;
     }
     const data = await res.json();
     return {
@@ -192,7 +197,7 @@ export const fetchGoogleDriveAbout = async (token: string): Promise<GoogleDriveU
       }
     };
   } catch (err) {
-    console.error('Error fetching Google Drive user info:', err);
+    console.warn('Could not fetch Google Drive user info (handled gracefully):', err);
     return null;
   }
 };

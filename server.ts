@@ -19,12 +19,42 @@ import {
 import { Student, Teacher, ClassModel, SubjectModel, AttendanceRecord, GradeRecord, ScheduleItem, ExamModel, DocumentModel, NotificationModel, ActivityItem } from './src/types';
 import { normalizeStudentData } from './src/lib/studentUtils';
 
-// In-Memory Database initialized with realistic Khmer demo dataset
+const DATA_DIR = path.join(process.cwd(), 'data');
+const STUDENTS_FILE = path.join(DATA_DIR, 'students.json');
+
+function loadStoredStudents(): Student[] {
+  try {
+    if (fs.existsSync(STUDENTS_FILE)) {
+      const content = fs.readFileSync(STUDENTS_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      if (Array.isArray(data) && data.length > 0) {
+        console.log(`[Storage] Loaded ${data.length} students from disk cache`);
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('[Storage] Could not read students from disk:', err);
+  }
+  return [...INITIAL_STUDENTS];
+}
+
+function persistStudentsToDisk(data: Student[]) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(STUDENTS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[Storage] Failed to persist students to disk:', err);
+  }
+}
+
+// Database initialized with persistent storage or realistic Khmer demo dataset
 let users = [...INITIAL_USERS];
 let classes: ClassModel[] = [...INITIAL_CLASSES];
 let teachers: Teacher[] = [...INITIAL_TEACHERS];
 let subjects: SubjectModel[] = [...INITIAL_SUBJECTS];
-let students: Student[] = [...INITIAL_STUDENTS];
+let students: Student[] = loadStoredStudents();
 let attendances: AttendanceRecord[] = [...INITIAL_ATTENDANCE];
 let grades: GradeRecord[] = [...INITIAL_GRADES];
 let schedules: ScheduleItem[] = [...INITIAL_SCHEDULE];
@@ -155,6 +185,7 @@ async function startServer() {
     const newStudent: Student = normalizeStudentData(body, students.length + 1);
 
     students.unshift(newStudent);
+    persistStudentsToDisk(students);
 
     // Record activity
     activities.unshift({
@@ -183,6 +214,7 @@ async function startServer() {
     
     const updated = normalizeStudentData({ ...students[index], ...req.body }, index + 1);
     students[index] = updated;
+    persistStudentsToDisk(students);
     res.json(updated);
   });
 
@@ -190,6 +222,7 @@ async function startServer() {
     const index = students.findIndex(s => s.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'រកមិនឃើញសិស្ស' });
     const deleted = students.splice(index, 1)[0];
+    persistStudentsToDisk(students);
     res.json({ success: true, message: 'បានលុបទិន្នន័យសិស្សជោគជ័យ', deleted });
   });
 
@@ -204,7 +237,10 @@ async function startServer() {
       return normalizeStudentData(item, students.length + idx + 1);
     });
 
+    // Add new students to in-memory store
     students.unshift(...newStudents);
+    // Persist immediately to disk
+    persistStudentsToDisk(students);
 
     // Record activity
     activities.unshift({
@@ -228,6 +264,7 @@ async function startServer() {
   app.delete('/api/students', (req: Request, res: Response) => {
     const count = students.length;
     students = [];
+    persistStudentsToDisk([]);
     attendances = [];
     grades = [];
     

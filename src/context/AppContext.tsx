@@ -142,8 +142,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Core Data
-  const [students, setStudents] = useState<Student[]>(INITIAL_STUDENTS);
+  // Core Data with localStorage persistence
+  const [students, setStudents] = useState<Student[]>(() => {
+    try {
+      const saved = localStorage.getItem('krou_students_storage');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read cached students from localStorage', e);
+    }
+    return INITIAL_STUDENTS;
+  });
   const [teachers, setTeachers] = useState<Teacher[]>(INITIAL_TEACHERS);
   const [classes, setClasses] = useState<ClassModel[]>(INITIAL_CLASSES);
   const [subjects, setSubjects] = useState<SubjectModel[]>(INITIAL_SUBJECTS);
@@ -154,6 +167,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [documents, setDocuments] = useState<DocumentModel[]>(INITIAL_DOCUMENTS);
   const [notifications, setNotifications] = useState<NotificationModel[]>(INITIAL_NOTIFICATIONS);
   const [activities, setActivities] = useState<ActivityItem[]>(INITIAL_ACTIVITIES);
+
+  // Keep localStorage in sync whenever students change
+  useEffect(() => {
+    try {
+      if (students.length > 0) {
+        localStorage.setItem('krou_students_storage', JSON.stringify(students));
+      }
+    } catch (e) {
+      console.warn('Failed to cache students to localStorage', e);
+    }
+  }, [students]);
 
   // Google Drive State
   const [isDriveConnected, setIsDriveConnected] = useState<boolean>(() => Boolean(getStoredDriveToken()));
@@ -345,6 +369,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
       console.warn(e);
     }
+    try {
+      localStorage.removeItem('krou_students_storage');
+    } catch {}
     setStudents([]);
     setAttendances([]);
     setGrades([]);

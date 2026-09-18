@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { useApp } from '../../context/AppContext';
 import { Student } from '../../types';
-import { normalizeStudentData } from '../../lib/studentUtils';
+import { normalizeStudentData, isRawStudentEmpty } from '../../lib/studentUtils';
 import {
   Upload,
   X,
@@ -55,42 +55,6 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
     }
   };
 
-  // Helper to normalize column keys from Khmer or English
-  const normalizeKey = (key: string): string => {
-    const k = key.trim().toLowerCase().replace(/[\s_\-]/g, '');
-    if (['studentcode', 'code', 'id', 'student_id', 'studentid', 'អត្តលេខ', 'កូដ', 'កូដសិស្ស'].includes(k)) {
-      return 'studentCode';
-    }
-    if (['namekhmer', 'khmername', 'khmer_name', 'ឈ្មោះខ្មែរ', 'គោត្តនាមនិងនាម', 'គោត្តនាម', 'ឈ្មោះសិស្ស', 'ឈ្មោះ'].includes(k)) {
-      return 'nameKhmer';
-    }
-    if (['nameenglish', 'englishname', 'latinname', 'name', 'english_name', 'ឈ្មោះឡាតាំង', 'ឈ្មោះអង់គ្លេស', 'អក្សរឡាតាំង'].includes(k)) {
-      return 'nameEnglish';
-    }
-    if (['gender', 'sex', 'ភេទ'].includes(k)) {
-      return 'gender';
-    }
-    if (['classname', 'class', 'classid', 'grade', 'ថ្នាក់', 'ថ្នាក់រៀន', 'កម្រិត'].includes(k)) {
-      return 'className';
-    }
-    if (['dob', 'dateofbirth', 'birthdate', 'ថ្ងៃខែឆ្នាំកំណើត', 'ថ្ងៃកំណើត'].includes(k)) {
-      return 'dob';
-    }
-    if (['phone', 'phonenumber', 'tel', 'ទូរស័ព្ទ', 'លេខទូរស័ព្ទ', 'ទូរស័ព្ទសិស្ស'].includes(k)) {
-      return 'phone';
-    }
-    if (['parentname', 'parent', 'guardian', 'អាណាព្យាបាល', 'ឈ្មោះអាណាព្យាបាល', 'ឪពុកម្តាយ'].includes(k)) {
-      return 'parentName';
-    }
-    if (['parentphone', 'guardianphone', 'លេខអាណាព្យាបាល', 'ទូរស័ព្ទអាណាព្យាបាល'].includes(k)) {
-      return 'parentPhone';
-    }
-    if (['address', 'city', 'province', 'ទីលំនៅ', 'អាសយដ្ឋាន', 'ភូមិឃុំ'].includes(k)) {
-      return 'address';
-    }
-    return k;
-  };
-
   // Parse raw array of JSON objects into Student models
   const processRawData = (rawList: Record<string, unknown>[]) => {
     if (!rawList || rawList.length === 0) {
@@ -102,21 +66,20 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
     const studentsList: Student[] = [];
 
     rawList.forEach((raw, idx) => {
+      if (isRawStudentEmpty(raw)) return;
+
       // Normalize student using 16 fields engine
       const student = normalizeStudentData(raw, idx + 1);
 
-      // Class assignment override if user specified a class in UI
-      if (targetClassId !== 'AUTO') {
-        const selectedCls = classes.find(c => c.id === targetClassId);
-        if (selectedCls) {
-          student.classId = selectedCls.id;
-          student.className = selectedCls.name;
-          student.grade = selectedCls.name;
-        }
-      }
+      // Check if row has at least some meaningful information
+      const hasMeaningfulContent = Boolean(
+        (student.khmer_name && !student.khmer_name.startsWith('សិស្ស #')) ||
+        student.english_name ||
+        student.phone_number ||
+        student.rlc
+      );
 
-      // Check if row has valid name
-      if (!student.khmer_name && !student.english_name) {
+      if (!hasMeaningfulContent && isRawStudentEmpty(raw)) {
         return; // Skip empty rows
       }
 
@@ -139,10 +102,53 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
 
     try {
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
+      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
-      const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+
+      // Read rows as array of arrays to find header row even if there are title lines
+      const sheetRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: '' });
+      let headerRowIndex = 0;
+      for (let r = 0; r < Math.min(sheetRows.length, 10); r++) {
+        const row = sheetRows[r];
+        if (Array.isArray(row)) {
+          const joined = row.map(cell => String(cell || '').toLowerCase()).join(' ');
+          if (
+            joined.includes('khmer') ||
+            joined.includes('english') ||
+            joined.includes('name') ||
+            joined.includes('ឈ្មោះ') ||
+            joined.includes('sex') ||
+            joined.includes('gender') ||
+            joined.includes('ភេទ') ||
+            joined.includes('grade') ||
+            joined.includes('ថ្នាក់') ||
+            joined.includes('rlc') ||
+            joined.includes('code') ||
+            joined.includes('អត្តលេខ')
+          ) {
+            headerRowIndex = r;
+            break;
+          }
+        }
+      }
+
+      let json: Record<string, unknown>[] = [];
+      if (headerRowIndex > 0) {
+        const headers = (sheetRows[headerRowIndex] || []).map((h: any) => String(h || '').trim());
+        const dataRows = sheetRows.slice(headerRowIndex + 1);
+        json = dataRows.map(row => {
+          const obj: Record<string, unknown> = {};
+          headers.forEach((h, colIdx) => {
+            if (h) {
+              obj[h] = row[colIdx] !== undefined ? row[colIdx] : '';
+            }
+          });
+          return obj;
+        });
+      } else {
+        json = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+      }
 
       processRawData(json);
     } catch (err) {
@@ -204,7 +210,8 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
             return {
               ...r,
               classId: targetClassId,
-              className: cls?.name || r.className
+              className: cls?.name || r.className,
+              grade: cls?.name || r.grade
             };
           });
 

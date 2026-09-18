@@ -30,167 +30,313 @@ export const STUDENT_FIELDS_CONFIG: FieldConfig[] = [
   { key: 'payment_by', labelKm: 'បង់ប្រាក់តាម', labelEn: 'Payment By', placeholder: 'ABA Bank', width: 'min-w-[120px]' }
 ];
 
+function cleanKey(str: string): string {
+  return str.toString().trim().toLowerCase().replace(/[\s_\-"'()[\]{}#]/g, '');
+}
+
+export function parseDateValue(val: any): string {
+  if (val === undefined || val === null || val === '') return '2008-01-01';
+  if (val instanceof Date) {
+    if (!isNaN(val.getTime())) {
+      return val.toISOString().split('T')[0];
+    }
+  }
+  if (typeof val === 'number') {
+    // Excel serial date number conversion (1900 date system)
+    if (val > 1000 && val < 60000) {
+      const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().split('T')[0];
+      }
+    }
+  }
+  const str = String(val).trim();
+  // Check DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const ddmmyyyy = str.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+  if (ddmmyyyy) {
+    const day = ddmmyyyy[1].padStart(2, '0');
+    const month = ddmmyyyy[2].padStart(2, '0');
+    const year = ddmmyyyy[3];
+    return `${year}-${month}-${day}`;
+  }
+  // Check YYYY/MM/DD or YYYY-MM-DD
+  const yyyymmdd = str.match(/^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})/);
+  if (yyyymmdd) {
+    const year = yyyymmdd[1];
+    const month = yyyymmdd[2].padStart(2, '0');
+    const day = yyyymmdd[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return str || '2008-01-01';
+}
+
+export function parseSexValue(val: any): 'ប្រុស' | 'ស្រី' {
+  if (!val) return 'ប្រុស';
+  const s = String(val).trim().toLowerCase();
+  if (
+    s === 'ស្រី' ||
+    s === 'female' ||
+    s === 'f' ||
+    s === 'girl' ||
+    s === 'woman' ||
+    s === 'ស្រី្ត' ||
+    s === 'ស'
+  ) {
+    return 'ស្រី';
+  }
+  return 'ប្រុស';
+}
+
+export function isRawStudentEmpty(raw: Record<string, any>): boolean {
+  if (!raw || typeof raw !== 'object') return true;
+  const values = Object.values(raw);
+  if (values.length === 0) return true;
+  return values.every(v => v === undefined || v === null || String(v).trim() === '');
+}
+
 export function normalizeStudentData(raw: Partial<Student> & Record<string, any>, index = 1): Student {
   const currentYear = new Date().getFullYear();
   const defaultRlc = `RLC-${currentYear}-${index.toString().padStart(3, '0')}`;
 
-  const khmer_name = (
-    raw.khmer_name ||
-    raw.nameKhmer ||
-    raw['ឈ្មោះខ្មែរ'] ||
-    raw['ឈ្មោះ'] ||
-    raw['khmer name'] ||
-    raw['Khmer Name'] ||
-    raw['Khmer_Name'] ||
-    'សិស្សថ្មី'
-  ).toString().trim();
-
-  const english_name = (
-    raw.english_name ||
-    raw.nameEnglish ||
-    raw['ឈ្មោះឡាតាំង'] ||
-    raw['ឈ្មោះអង់គ្លេស'] ||
-    raw['english name'] ||
-    raw['English Name'] ||
-    raw['English_Name'] ||
-    raw['Name'] ||
-    khmer_name
-  ).toString().trim();
-
-  const rawSex = String(
-    raw.sex ||
-    raw.gender ||
-    raw['ភេទ'] ||
-    raw['Sex'] ||
-    raw['Gender'] ||
-    'ប្រុស'
-  ).trim();
-
-  let sex = 'ប្រុស';
-  if (
-    rawSex === 'ស្រី' ||
-    rawSex.toUpperCase() === 'FEMALE' ||
-    rawSex.toUpperCase() === 'F' ||
-    rawSex.toLowerCase() === 'female'
-  ) {
-    sex = 'ស្រី';
-  } else if (
-    rawSex === 'ប្រុស' ||
-    rawSex.toUpperCase() === 'MALE' ||
-    rawSex.toUpperCase() === 'M' ||
-    rawSex.toLowerCase() === 'male'
-  ) {
-    sex = 'ប្រុស';
-  } else {
-    sex = rawSex || 'ប្រុស';
+  // Build a normalized lookup map of all keys in raw object
+  const map: Record<string, any> = {};
+  if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw)) {
+      if (v !== undefined && v !== null && v !== '') {
+        const cleaned = cleanKey(k);
+        map[cleaned] = v;
+      }
+    }
   }
 
-  const rawAge = raw.age !== undefined && raw.age !== null ? raw.age : raw['អាយុ'] || raw['Age'];
-  const age = rawAge ? String(rawAge).trim() : '';
+  // 1. Khmer Name
+  const rawKhmerName =
+    raw.khmer_name ||
+    raw.nameKhmer ||
+    map['khmername'] ||
+    map['namekhmer'] ||
+    map['ឈ្មោះខ្មែរ'] ||
+    map['ឈ្មោះ'] ||
+    map['គោត្តនាមនិងនាម'] ||
+    map['គោត្តនាម-នាម'] ||
+    map['គោត្តនាម'] ||
+    map['ឈ្មោះសិស្ស'] ||
+    map['ឈ្មោះពេញ'] ||
+    map['ឈ្មោះភាសាខ្មែរ'] ||
+    map['khmer'] ||
+    raw.english_name ||
+    raw.nameEnglish ||
+    map['englishname'] ||
+    map['name'] ||
+    '';
 
-  const grade = (
+  const khmer_name = (rawKhmerName || `សិស្ស #${index}`).toString().trim();
+
+  // 2. English Name
+  const rawEnglishName =
+    raw.english_name ||
+    raw.nameEnglish ||
+    map['englishname'] ||
+    map['nameenglish'] ||
+    map['latinname'] ||
+    map['name'] ||
+    map['fullname'] ||
+    map['ឈ្មោះឡាតាំង'] ||
+    map['ឈ្មោះអង់គ្លេស'] ||
+    map['អក្សរឡាតាំង'] ||
+    map['ឈ្មោះជាភាសាអង់គ្លេស'] ||
+    map['english'] ||
+    '';
+
+  const english_name = (rawEnglishName || khmer_name).toString().trim();
+
+  // 3. Sex
+  const rawSex =
+    raw.sex ||
+    raw.gender ||
+    map['sex'] ||
+    map['gender'] ||
+    map['ភេទ'] ||
+    map['gendersex'] ||
+    '';
+  const sex = parseSexValue(rawSex);
+
+  // 4. Age
+  const rawAge =
+    raw.age !== undefined && raw.age !== null
+      ? raw.age
+      : map['age'] || map['អាយុ'] || '';
+  const age = rawAge ? String(rawAge).trim() : '17';
+
+  // 5. Grade
+  const rawGrade =
     raw.grade ||
     raw.className ||
-    raw['ថ្នាក់'] ||
-    raw['ថ្នាក់/កម្រិត'] ||
-    raw['ថ្នាក់រៀន'] ||
-    raw['Grade'] ||
-    raw['Class'] ||
-    'ថ្នាក់ទី១២ ក'
-  ).toString().trim();
+    map['grade'] ||
+    map['gradelevel'] ||
+    map['class'] ||
+    map['classname'] ||
+    map['classid'] ||
+    map['ថ្នាក់'] ||
+    map['ថ្នាក់រៀន'] ||
+    map['កម្រិត'] ||
+    map['ថ្នាក់កម្រិត'] ||
+    '';
+  const grade = (rawGrade || 'ថ្នាក់ទី១២ ក').toString().trim();
 
-  const date_of_birth = (
+  // 6. Date of Birth
+  const rawDob =
     raw.date_of_birth ||
     raw.dob ||
-    raw['ថ្ងៃខែឆ្នាំកំណើត'] ||
-    raw['ថ្ងៃកំណើត'] ||
-    raw['Date of Birth'] ||
-    raw['DOB'] ||
-    '2008-01-01'
-  ).toString().trim();
+    map['dateofbirth'] ||
+    map['dob'] ||
+    map['birthdate'] ||
+    map['ថ្ងៃខែឆ្នាំកំណើត'] ||
+    map['ថ្ងៃកំណើត'] ||
+    map['កាលបរិច្ឆេទកំណើត'] ||
+    '';
+  const date_of_birth = parseDateValue(rawDob);
 
-  const rlc = (
+  // 7. RLC (Student Code)
+  const rawRlc =
     raw.rlc ||
     raw.studentCode ||
-    raw['RLC'] ||
-    raw['អត្តលេខ'] ||
-    raw['កូដសិស្ស'] ||
-    raw['StudentCode'] ||
-    defaultRlc
-  ).toString().trim();
+    map['rlc'] ||
+    map['studentcode'] ||
+    map['code'] ||
+    map['id'] ||
+    map['studentid'] ||
+    map['អត្តលេខ'] ||
+    map['កូដសិស្ស'] ||
+    map['កូដ'] ||
+    '';
+  const rlc = (rawRlc || defaultRlc).toString().trim();
 
-  const phone_number = (
+  // 8. Phone Number
+  const rawPhone =
     raw.phone_number ||
     raw.phone ||
-    raw['លេខទូរស័ព្ទ'] ||
-    raw['ទូរស័ព្ទ'] ||
-    raw['Phone'] ||
-    raw['Phone_Number'] ||
-    ''
-  ).toString().trim();
+    map['phonenumber'] ||
+    map['phone'] ||
+    map['tel'] ||
+    map['telephone'] ||
+    map['mobile'] ||
+    map['លេខទូរស័ព្ទ'] ||
+    map['ទូរស័ព្ទ'] ||
+    map['ទូរស័ព្ទសិស្ស'] ||
+    '';
+  const phone_number = String(rawPhone || '').trim();
 
-  const contributions = (
-    raw.contributions !== undefined && raw.contributions !== null ? raw.contributions :
-    raw['contributions'] || raw['Contributions'] || raw['ការចូលរួម'] || raw['វិភាគទាន'] || raw['ថ្លៃសិក្សា'] || ''
-  ).toString().trim();
+  // 9. Contributions
+  const rawContrib =
+    raw.contributions !== undefined && raw.contributions !== null
+      ? raw.contributions
+      : map['contributions'] ||
+        map['contribution'] ||
+        map['fee'] ||
+        map['tuition'] ||
+        map['វិភាគទាន'] ||
+        map['ការចូលរួម'] ||
+        map['ថ្លៃសិក្សា'] ||
+        '';
+  const contributions = String(rawContrib || '').trim();
 
-  const remark = (
-    raw.remark !== undefined && raw.remark !== null ? raw.remark :
-    raw['remark'] || raw['Remark'] || raw['ចំណាំ'] || ''
-  ).toString().trim();
+  // 10. Remark
+  const rawRemark =
+    raw.remark !== undefined && raw.remark !== null
+      ? raw.remark
+      : map['remark'] ||
+        map['remarks'] ||
+        map['note'] ||
+        map['notes'] ||
+        map['comment'] ||
+        map['ចំណាំ'] ||
+        map['សម្គាល់'] ||
+        '';
+  const remark = String(rawRemark || '').trim();
 
-  const orther = (
-    raw.orther !== undefined && raw.orther !== null ? raw.orther :
-    raw.other !== undefined && raw.other !== null ? raw.other :
-    raw['orther'] || raw['other'] || raw['Other'] || raw['ផ្សេងៗ'] || ''
-  ).toString().trim();
+  // 11. Orther (Other)
+  const rawOrther =
+    raw.orther !== undefined && raw.orther !== null
+      ? raw.orther
+      : raw.other !== undefined && raw.other !== null
+      ? raw.other
+      : map['orther'] ||
+        map['other'] ||
+        map['others'] ||
+        map['ផ្សេងៗ'] ||
+        map['ផ្សេងទៀត'] ||
+        map['ព័ត៌មានបន្ថែម'] ||
+        '';
+  const orther = String(rawOrther || '').trim();
 
-  const books = (
-    raw.books !== undefined && raw.books !== null ? raw.books :
-    raw['books'] || raw['Books'] || raw['សៀវភៅ'] || ''
-  ).toString().trim();
+  // 12. Books
+  const rawBooks =
+    raw.books !== undefined && raw.books !== null
+      ? raw.books
+      : map['books'] ||
+        map['book'] ||
+        map['textbook'] ||
+        map['textbooks'] ||
+        map['សៀវភៅ'] ||
+        map['សៀវភៅពុម្ព'] ||
+        '';
+  const books = String(rawBooks || 'បានទទួលរួច').trim();
 
-  const time_study = (
+  // 13. Time Study
+  const rawTimeStudy =
     raw.time_study ||
-    raw['time_study'] ||
-    raw['Time Study'] ||
-    raw['Time_Study'] ||
-    raw['ម៉ោងសិក្សា'] ||
-    raw['ម៉ោង'] ||
-    '7:00 - 11:00 AM'
-  ).toString().trim();
+    map['timestudy'] ||
+    map['studytime'] ||
+    map['shift'] ||
+    map['session'] ||
+    map['time'] ||
+    map['ម៉ោងសិក្សា'] ||
+    map['វេនសិក្សា'] ||
+    map['ម៉ោង'] ||
+    '';
+  const time_study = (rawTimeStudy || '7:00 - 11:00 AM').toString().trim();
 
-  const status = (
+  // 14. Status
+  const rawStatus =
     raw.status ||
-    raw['status'] ||
-    raw['Status'] ||
-    raw['ស្ថានភាព'] ||
-    'កំពុងសិក្សា'
-  ).toString().trim();
+    map['status'] ||
+    map['state'] ||
+    map['ស្ថានភាព'] ||
+    map['ស្ថានភាពសិក្សា'] ||
+    '';
+  const status = (rawStatus || 'កំពុងសិក្សា').toString().trim();
 
-  const semester = (
+  // 15. Semester
+  const rawSemester =
     raw.semester ||
-    raw['semester'] ||
-    raw['Semester'] ||
-    raw['ឆមាស'] ||
-    'ឆមាសទី១'
-  ).toString().trim();
+    map['semester'] ||
+    map['term'] ||
+    map['ឆមាស'] ||
+    map['វគ្គ'] ||
+    '';
+  const semester = (rawSemester || 'ឆមាសទី១').toString().trim();
 
-  const payment_by = (
+  // 16. Payment By
+  const rawPaymentBy =
     raw.payment_by ||
-    raw['payment_by'] ||
-    raw['Payment By'] ||
-    raw['Payment_By'] ||
-    raw['បង់ប្រាក់តាម'] ||
-    raw['ការបង់ប្រាក់'] ||
-    'ABA Bank'
-  ).toString().trim();
+    map['paymentby'] ||
+    map['payment'] ||
+    map['method'] ||
+    map['paymentmethod'] ||
+    map['បង់ប្រាក់តាម'] ||
+    map['ការបង់ប្រាក់'] ||
+    map['វិធីបង់ប្រាក់'] ||
+    map['ធនាគារ'] ||
+    '';
+  const payment_by = (rawPaymentBy || 'ABA Bank').toString().trim();
 
-  const id = raw.id || `std-${Date.now()}-${index}`;
+  // Unique ID
+  const id = raw.id || `std-${Date.now()}-${index}-${Math.floor(Math.random() * 1000)}`;
 
   return {
     id,
-    // 16 Exact Fields:
+    // 16 Exact Schema Fields:
     khmer_name,
     english_name,
     sex,
